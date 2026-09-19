@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#172033">
+<meta name="description" content="A free automatic personal budget tracker for income, expenses and savings.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>My Free Budget</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#172033}
+header{background:#172033;color:white;padding:22px 16px;text-align:center}
+header h1{margin:0 0 6px;font-size:28px}
+header p{margin:0;opacity:.8}
+.container{max-width:950px;margin:20px auto;padding:0 14px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.card{background:white;border-radius:16px;padding:18px;box-shadow:0 4px 16px #0000000d}
+.stat{font-size:25px;font-weight:bold;margin-top:7px}
+.income{color:#16834a}.expense{color:#c43b3b}.balance{color:#315bc5}
+section{margin-top:16px}
+form{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px}
+input,select,button{width:100%;padding:12px;border:1px solid #d8deea;border-radius:10px;font-size:15px}
+button{border:0;background:#315bc5;color:white;font-weight:bold;cursor:pointer}
+.warning{background:#fff4d6;border:1px solid #f0c36d;color:#765300;padding:12px;border-radius:10px;margin-top:10px}
+.success{background:#e9f8ef;border:1px solid #8bd0a5;color:#176b38;padding:12px;border-radius:10px;margin-top:10px}
+button.danger{background:#d94b4b}
+button.secondary{background:#657184}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #edf0f5}
+.actions button{width:auto;padding:7px 10px}
+.progress{height:12px;background:#e9edf4;border-radius:10px;overflow:hidden;margin-top:8px}
+.bar{height:100%;background:#315bc5;width:0}
+.category-row{margin:13px 0}
+.category-top{display:flex;justify-content:space-between;font-size:14px}
+.small{font-size:13px;color:#667085}
+.empty{text-align:center;color:#777;padding:25px}
+@media(max-width:700px){
+ .grid{grid-template-columns:1fr}
+ form{grid-template-columns:1fr}
+ table{font-size:13px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>💰 My Free Budget</h1>
+  <p>Automatic personal budget tracker — your data stays on this device.</p>
+  <button id="installBtn" style="display:none;margin:14px auto 0;max-width:220px;background:#fff;color:#172033">📲 Install App</button>
+</header>
+
+<div class="container">
+  <section class="grid">
+    <div class="card"><div class="small">Total Income</div><div id="income" class="stat income">RWF 0</div></div>
+    <div class="card"><div class="small">Total Expenses</div><div id="expense" class="stat expense">RWF 0</div></div>
+    <div class="card"><div class="small">Money Remaining</div><div id="balance" class="stat balance">RWF 0</div></div>
+    <div class="card"><div class="small">Total Savings</div><div id="savings" class="stat" style="color:#8a5a00">RWF 0</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Add Transaction</h2>
+    <form id="form">
+      <select id="type">
+        <option value="income">Income</option>
+        <option value="expense">Expense</option>
+        <option value="savings">Savings</option>
+      </select>
+      <input id="description" placeholder="Description (e.g. Salary)" required>
+      <input id="amount" type="number" min="0" step="1" placeholder="Amount (RWF)" required>
+      <button>Add</button>
+    </form>
+    <p class="small">Tip: If you enter the same income, expense, or savings name again, its amount is automatically added to the existing item instead of creating a duplicate row. Savings are kept separate from money available to spend.</p>
+  </section>
+
+  <section class="card">
+    <h2>🤖 Automatic Saving Advisor</h2>
+    <div id="advice"></div>
+  </section>
+
+  <section class="card">
+    <h2>Spending by Category</h2>
+    <div id="categories"></div>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h2 style="margin:0">Transactions</h2>
+      <button class="danger" id="clear">Clear All</button>
+    </div>
+    <table>
+      <thead><tr><th>Type</th><th>Description</th><th>Amount</th><th>Date</th><th></th></tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+const KEY="myFreeBudgetTransactions";
+let transactions=JSON.parse(localStorage.getItem(KEY)||"[]");
+
+const money=n=>"RWF "+Number(n).toLocaleString("en-RW");
+function save(){localStorage.setItem(KEY,JSON.stringify(transactions)); render();}
+function render(){
+  const income=transactions.filter(x=>x.type==="income").reduce((a,x)=>a+x.amount,0);
+  const expense=transactions.filter(x=>x.type==="expense").reduce((a,x)=>a+x.amount,0);
+  const savings=transactions.filter(x=>x.type==="savings").reduce((a,x)=>a+x.amount,0);
+  const balance=income-expense-savings;
+  document.getElementById("income").textContent=money(income);
+  document.getElementById("expense").textContent=money(expense);
+  document.getElementById("balance").textContent=money(balance);
+  document.getElementById("savings").textContent=money(savings);
+
+  const list=document.getElementById("list");
+  list.innerHTML="";
+  if(!transactions.length) list.innerHTML='<tr><td colspan="5" class="empty">No transactions yet.</td></tr>';
+  transactions.slice().reverse().forEach((x,i)=>{
+    const realIndex=transactions.length-1-i;
+    list.innerHTML+=`<tr>
+      <td>${x.type==="income"?"🟢 Income":x.type==="savings"?"🟡 Savings":"🔴 Expense"}</td>
+      <td>${escapeHtml(x.description)}</td>
+      <td>${money(x.amount)}</td>
+      <td>${x.date}</td>
+      <td class="actions"><button class="danger" onclick="removeItem(${realIndex})">Delete</button></td>
+    </tr>`;
+  });
+
+  generateAdvice(income, expense);
+
+  const cats={};
+  transactions.filter(x=>x.type==="expense").forEach(x=>{
+    const c=categoryOf(x.description);
+    cats[c]=(cats[c]||0)+x.amount;
+  });
+  const box=document.getElementById("categories");
+  const total=expense||1;
+  box.innerHTML=Object.keys(cats).length ? Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`
+    <div class="category-row">
+      <div class="category-top"><span>${c}</span><strong>${money(v)} (${Math.round(v/total*100)}%)</strong></div>
+      <div class="progress"><div class="bar" style="width:${Math.min(100,v/total*100)}%"></div></div>
+    </div>`).join("") : '<div class="empty">Your spending categories will appear here.</div>';
+}
+function generateAdvice(income, expense){
+  const box=document.getElementById("advice");
+  const saved=transactions.filter(x=>x.type==="savings").reduce((a,x)=>a+x.amount,0);
+  if(!income){
+    box.innerHTML='<div class="empty">Add your income first. I will then analyze your spending and suggest what to reduce.</div>';
+    return;
+  }
+
+  const savings=income-expense-saved;
+  const target=Math.round(income*0.20);
+  const cats={};
+  transactions.filter(x=>x.type==="expense").forEach(x=>{
+    const c=categoryOf(x.description);
+    cats[c]=(cats[c]||0)+x.amount;
+  });
+
+  const ranked=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  let messages=[];
+
+  if(savings < 0){
+    messages.push("🚨 <strong>You are spending more than your income.</strong> Stop or reduce your largest non-essential expense first.");
+  } else if(savings < target){
+    messages.push(`🎯 <strong>Saving target:</strong> Try to keep at least ${money(target)} (20% of income). You currently have ${money(savings)} left.`);
+  } else {
+    messages.push(`✅ <strong>Good job!</strong> You are keeping ${money(savings)}. Your current savings are at or above the 20% target.`);
+  }
+
+  if(saved>0){
+    messages.push(`🏦 <strong>Keep saving:</strong> You have already put aside ${money(saved)}. This money is excluded from your available balance, helping protect it from spending.`);
+  } else {
+    messages.push(`🏦 <strong>Start saving:</strong> Add a "Savings" transaction whenever you move money aside. It will be separated from your spending and protected in your budget.`);
+  }
+
+  if(ranked.length){
+    const [largest,amount]=ranked[0];
+    const suggested=Math.max(0,Math.round(amount*0.20));
+    if(suggested>0){
+      messages.push(`💡 <strong>Reduce ${largest}:</strong> This is your biggest spending category at ${money(amount)}. Cutting about ${money(suggested)} could increase your savings.`);
+    }
+  }
+
+  if(ranked.length>1){
+    const [second,amount]=ranked[1];
+    const suggested=Math.max(0,Math.round(amount*0.10));
+    if(suggested>0) messages.push(`🔎 <strong>Also watch ${second}:</strong> Reducing it by around ${money(suggested)} would give you extra room to save.`);
+  }
+
+  const nonEssential=/food|restaurant|clothing|entertainment|transport|phone|internet|other/i;
+  const biggestTransaction=transactions
+    .filter(x=>x.type==="expense")
+    .slice()
+    .sort((a,b)=>b.amount-a.amount)[0];
+  if(biggestTransaction && nonEssential.test(biggestTransaction.description)){
+    messages.push(`🛑 <strong>Large expense alert:</strong> "${escapeHtml(biggestTransaction.description)}" cost ${money(biggestTransaction.amount)}. Ask yourself whether it can be reduced or delayed.`);
+  }
+
+  messages.push(`📌 <strong>Rule to follow:</strong> Before buying something that is not essential, check your "Money Remaining" and try to protect your savings first.`);
+
+  box.innerHTML=messages.map(m=>`<div style="padding:12px;margin:8px 0;background:#f4f7fb;border-radius:10px">${m}</div>`).join("");
+}
+function categoryOf(s){
+  s=s.toLowerCase();
+  if(/food|meal|restaurant|lunch|dinner|breakfast/.test(s)) return "Food";
+  if(/rent|house|room|ghetto/.test(s)) return "Housing";
+  if(/transport|bus|moto|taxi|fuel/.test(s)) return "Transport";
+  if(/soap|toilet|charcoal|water|electric|utility/.test(s)) return "Household";
+  if(/school|tuition|book|education|course/.test(s)) return "Education";
+  if(/phone|airtel|mtn|internet|data/.test(s)) return "Phone & Internet";
+  if(/clothes|shirt|shoe/.test(s)) return "Clothing";
+  if(/health|medicine|doctor|clinic/.test(s)) return "Health";
+  return "Other";
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));}
+function removeItem(i){
+  lastDeleted=[transactions[i]];
+  transactions.splice(i,1);
+  save();
+  document.getElementById("advice").innerHTML=
+    '<div class="success">↩️ Transaction removed. <button class="secondary" onclick="restoreLast()">Restore last removed item</button></div>';
+}
+function restoreLast(){
+  if(lastDeleted && lastDeleted.length){
+    transactions.push(lastDeleted[0]);
+    lastDeleted=null;
+    save();
+  }
+}
+document.getElementById("form").addEventListener("submit",e=>{
+  e.preventDefault();
+
+  const type=document.getElementById("type").value;
+  const description=document.getElementById("description").value.trim();
+  const amount=Number(document.getElementById("amount").value);
+
+  // If the same item already exists, add the new amount to it
+  // instead of creating another row.
+  const existing=transactions.find(x =>
+    x.type===type &&
+    x.description.toLowerCase()===description.toLowerCase()
+  );
+
+  if(existing){
+    existing.amount += amount;
+    existing.date = new Date().toLocaleDateString();
+
+    const box=document.getElementById("advice");
+    box.innerHTML=`<div class="success">✅ <strong>Updated existing item.</strong><br>
+      ${escapeHtml(description)} is now <strong>${money(existing.amount)}</strong>.
+      A new duplicate row was not created.</div>`;
+
+    e.target.reset();
+    save();
+    return;
+  }
+
+  transactions.push({
+    type:type,
+    description:description,
+    amount:amount,
+    date:new Date().toLocaleDateString()
+  });
+
+  e.target.reset();
+  save();
+});
+let lastDeleted=null;
+
+document.getElementById("clear").addEventListener("click",()=>{
+  if(!transactions.length) return;
+  if(confirm("Delete all transactions? You will be able to restore them once.")){
+    lastDeleted=transactions.slice();
+    transactions=[];
+    localStorage.setItem(KEY,JSON.stringify(transactions));
+    render();
+    document.getElementById("advice").innerHTML=
+      '<div class="warning">🗑️ All transactions were removed. <button onclick="restoreAll()">Restore them</button></div>';
+  }
+});
+
+function restoreAll(){
+  if(lastDeleted && lastDeleted.length){
+    transactions=lastDeleted.slice();
+    lastDeleted=null;
+    save();
+  }
+}
+render();
+</script>
+<script>
+let deferredPrompt;
+const installBtn = document.getElementById("installBtn");
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.style.display = "block";
+});
+installBtn.addEventListener("click", async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  installBtn.style.display = "none";
+});
+window.addEventListener("appinstalled", () => {
+  installBtn.style.display = "none";
+});
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.error));
+}
+</script>
+</body>
+</html>
